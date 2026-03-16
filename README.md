@@ -17,5 +17,5 @@ python -m pip install -e ./source/project_831
 
 ## Command for Launching Random Robot Agent
 ```bash
-python scripts/random_agent.py --task project831-PiperSwing-v0
+python scripts/random_agent.py --task PiperPickNPlace
 ```
