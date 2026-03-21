@@ -61,6 +61,32 @@ from isaaclab_tasks.utils import parse_env_cfg
 import project_831.tasks  # noqa: F401
 
 
+def collect_debug_stats(env, reward, terminated, truncated):
+    unwrapped = env.unwrapped
+
+    jaw_l_pos = unwrapped.robot.data.body_pos_w[:, unwrapped._jaw_l_body_idx, :]
+    jaw_r_pos = unwrapped.robot.data.body_pos_w[:, unwrapped._jaw_r_body_idx, :]
+    gripper_pos = 0.5 * (jaw_l_pos + jaw_r_pos)
+
+    box_pos = unwrapped.box.data.root_pos_w
+    target_pos = unwrapped.target_pos
+
+    grip_to_box = torch.linalg.norm(box_pos - gripper_pos, dim=-1)
+    box_to_target = torch.linalg.norm(box_pos - target_pos, dim=-1)
+    box_height = box_pos[:, 2] - unwrapped.cfg.box_center_z
+
+    done = terminated | truncated
+
+    stats = {
+        "reward_mean": reward.mean().item(),
+        "grip_box_mean": grip_to_box.mean().item(),
+        "box_target_mean": box_to_target.mean().item(),
+        "box_height_mean": box_height.mean().item(),
+        "num_done": done.sum().item(),
+    }
+    return stats
+
+
 def random_action_generation(env, p_close: float = 0.5) -> torch.Tensor:
     """Generate random normalized actions for the current env.
 
@@ -150,6 +176,8 @@ def main():
                 ep_lengths[done_ids] = 0
 
             if env_steps >= next_log:
+                stats = collect_debug_stats(env, reward, terminated, truncated)
+
                 if completed_episode_returns:
                     recent_returns = completed_episode_returns[-50:]
                     recent_lengths = completed_episode_lengths[-50:]
@@ -160,14 +188,22 @@ def main():
                         f"[eval] steps={env_steps:5d} | "
                         f"episodes={num_done:4d} | "
                         f"mean_return(last<=50)={mean_ret:8.3f} | "
-                        f"mean_len(last<=50)={mean_len:6.2f}"
+                        f"mean_len(last<=50)={mean_len:6.2f} | "
+                        f"reward_mean={stats['reward_mean']:7.3f} | "
+                        f"grip_box={stats['grip_box_mean']:6.3f} | "
+                        f"box_target={stats['box_target_mean']:6.3f} | "
+                        f"box_h={stats['box_height_mean']:6.3f} | "
+                        f"done_now={stats['num_done']:2d}"
                     )
                 else:
                     print(
                         f"[eval] steps={env_steps:5d} | "
                         f"episodes=0 | "
-                        f"mean_return(last<=50)=nan | "
-                        f"mean_len(last<=50)=nan"
+                        f"reward_mean={stats['reward_mean']:7.3f} | "
+                        f"grip_box={stats['grip_box_mean']:6.3f} | "
+                        f"box_target={stats['box_target_mean']:6.3f} | "
+                        f"box_h={stats['box_height_mean']:6.3f} | "
+                        f"done_now={stats['num_done']:2d}"
                     )
                 next_log += args_cli.log_every
 

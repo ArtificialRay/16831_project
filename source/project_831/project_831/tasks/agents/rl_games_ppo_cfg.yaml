@@ -1,0 +1,87 @@
+params:
+  seed: 42
+
+  load_checkpoint: true
+  load_path: /home/droplab/16831/project/project_831/logs/rl_games/piper_pick_n_place_PPO/pick_n_place_v18/nn/piper_pick_n_place_PPO.pth
+  
+  env:
+    clip_observations: 10.0
+    clip_actions: 1.0
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: false
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: -0.5
+        fixed_sigma: true
+    mlp:
+      units: [256, 256, 128]
+      activation: elu
+      d2rl: false
+      initializer:
+        name: default
+      regularizer:
+        name: none
+
+  load_checkpoint: false
+  load_path: ""
+
+  config:
+    name: piper_pick_n_place_PPO
+    full_experiment_name: pick_n_place_v19
+    env_name: rlgpu
+
+    device: cuda:0
+    device_name: cuda:0
+    train_dir: logs/rl_games
+    
+    multi_gpu: false
+    normalize_input: true
+    normalize_value: true
+    normalize_advantage: true
+    reward_shaper:
+      scale_value: 1.0
+
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    score_to_win: 1000000
+    max_epochs: 500
+
+    save_best_after: 50
+    save_frequency: 50
+    print_stats: true
+
+    grad_norm: 1.0
+    truncate_grads: true
+
+    entropy_coef: 0.001
+    critic_coef: 2.0
+
+    e_clip: 0.2
+    clip_value: true
+
+    horizon_length: 32
+    minibatch_size: 2048
+    mini_epochs: 5
+
+    bounds_loss_coef: 0.0001
+
+    player:
+      deterministic: true
