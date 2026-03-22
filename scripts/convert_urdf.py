@@ -24,9 +24,10 @@ try:
     log(f"CWD: {os.getcwd()}")
     log(f"ARGV: {sys.argv}")
 
-    # Expand ~ and make absolute paths
-    urdf_path = Path("~/16831/project/project_831/assets/robots/piper_description.urdf").expanduser().resolve()
-    out_dir = Path("~/16831/project/project_831/assets/robots").expanduser().resolve()
+    # Use paths relative to script location
+    script_dir = Path(__file__).parent.parent.resolve()
+    urdf_path = script_dir / "assets/robots/piper_description.urdf"
+    out_dir = script_dir / "assets/robots/piper_description"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log(f"URDF: {urdf_path} exists={urdf_path.exists()}")

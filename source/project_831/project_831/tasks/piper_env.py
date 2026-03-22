@@ -16,10 +16,10 @@ class PiperPickNPlaceEnv(DirectRLEnv):
     def __init__(self, cfg: PiperPickNPlaceEnvCfg, **kwargs):
         super().__init__(cfg, **kwargs)
 
-        self.robot: Articulation = self.scene["robot"]
-        self.box: RigidObject = self.scene["box"]
+        self.robot: Articulation = self.scene["robot"] # robot object
+        self.box: RigidObject = self.scene["box"] # box object to be manipulated
 
-        self.num_joints = self.robot.num_joints
+        self.num_joints = self.robot.num_joints # number of joints in the robot articulation
 
         # --- joint/body name lookup ---
         joint_names = getattr(self.robot.data, "joint_names", None)
@@ -33,28 +33,28 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         body_names = [str(n) for n in body_names]
 
         # arm joints
-        self._arm_joint_ids = [joint_names.index(n) for n in self.cfg.arm_joint_names]
+        self._arm_joint_ids = [joint_names.index(n) for n in self.cfg.arm_joint_names] # indices of the arm joints
 
         # gripper joints (physical)
-        self._gripper_joint_ids = [joint_names.index(n) for n in self.cfg.gripper_joint_names]
-        self._link7_joint_id = joint_names.index(self.cfg.gripper_joint_names[0])
-        self._link8_joint_id = joint_names.index(self.cfg.gripper_joint_names[1])
+        self._gripper_joint_ids = [joint_names.index(n) for n in self.cfg.gripper_joint_names] # indices of the gripper joints
+        self._link7_joint_id = joint_names.index(self.cfg.gripper_joint_names[0]) # idx of left gripper joint
+        self._link8_joint_id = joint_names.index(self.cfg.gripper_joint_names[1]) # idx of right gripper joint
 
         # gripper body ids for pose computation
-        self._jaw_l_body_idx = body_names.index(self.cfg.jaw_left_name)
-        self._jaw_r_body_idx = body_names.index(self.cfg.jaw_right_name)
-        self._gripper_base_body_idx = body_names.index(self.cfg.gripper_base_name)
+        self._jaw_l_body_idx = body_names.index(self.cfg.jaw_left_name) # position of left jaw body in the robot's body list
+        self._jaw_r_body_idx = body_names.index(self.cfg.jaw_right_name) # position of right jaw body in the robot's body list
+        self._gripper_base_body_idx = body_names.index(self.cfg.gripper_base_name) # position of gripper base body in the robot's body list
 
         # buffers
-        self._actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
-        self._max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation))
+        self._actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device) # buffer to store the current actions for reward computation
+        self._max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation)) # maximum number of steps per episode
 
         # arm limits as tensors on device
-        self._arm_joint_limits = torch.tensor(
+        self._arm_joint_limits = torch.tensor( # lower and upper limits for all 6 arm joints, shape (6, 2)
             self.cfg.joint_limits_rad, dtype=torch.float32, device=self.device
         )
-        self._arm_lower_limits = self._arm_joint_limits[:, 0]
-        self._arm_upper_limits = self._arm_joint_limits[:, 1]
+        self._arm_lower_limits = self._arm_joint_limits[:, 0] # get lower limit
+        self._arm_upper_limits = self._arm_joint_limits[:, 1] # get upper limit
 
         # default joint targets
         self._default_arm_joint_pos = torch.tensor(
@@ -85,6 +85,13 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         print("num envs:", self.num_envs)
         print("box root positions shape:", self.box.data.root_pos_w.shape)
 
+    def close(self):
+        """Override close to safely handle _is_closed attribute."""
+        if not hasattr(self, '_is_closed'):
+            return
+        # Call parent close if not already closed
+        if not self._is_closed:
+            super().close()
 
     # --------------------------------------------------------------------- #
     # reset
@@ -96,21 +103,22 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         box_state = self.box.data.default_root_state[env_ids].clone()
-        env_origins = self.scene.env_origins[env_ids]
+        env_origins = self.scene.env_origins[env_ids] # origin positions for the environments being reset, shape (n, 3)
 
         # print(f"[reset] num_envs_reset={env_ids.shape[0]}, env_ids={env_ids[:8].detach().cpu().tolist()}")
 
         # -------------------------------------------------
         # Reset box position with randomization
         # -------------------------------------------------
-        n = env_ids.shape[0]
+        n = env_ids.shape[0] # number of environments being reset in this call
+        # randomize box pos within a xy range
         dx = (2.0 * torch.rand(n, device=self.device) - 1.0) * self.cfg.box_randomize_xy[0]
         dy = (2.0 * torch.rand(n, device=self.device) - 1.0) * self.cfg.box_randomize_xy[1]
-
+        # set box state: (x, y, z, quat_xyzw, vel_xyz, ang_vel_xyz)
         box_state[:, 0] = env_origins[:, 0] + self.cfg.box_init_pos[0] + dx
         box_state[:, 1] = env_origins[:, 1] + self.cfg.box_init_pos[1] + dy
         box_state[:, 2] = env_origins[:, 2] + self.cfg.box_center_z
-
+        # no velocity for box
         box_state[:, 3:7] = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
         box_state[:, 7:] = 0.0
 
@@ -144,6 +152,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
 
         valid = torch.zeros(n, dtype=torch.bool, device=self.device)
         for _ in range(max_tries):
+            # set target pos with randomization around the nominal target location
             tx = env_origins[:, 0] + self.cfg.target_pos[0] + (
                 (2.0 * torch.rand(n, device=self.device) - 1.0) * self.cfg.target_randomize_xy[0]
             )
@@ -153,11 +162,11 @@ class PiperPickNPlaceEnv(DirectRLEnv):
 
             proposal = torch.stack([tx, ty], dim=-1)
             dist = torch.linalg.norm(proposal - box_xy, dim=-1)
-
+            # only accept dist with following constraints:
             new_valid = (dist >= self.cfg.min_goal_dist_from_box) & (
                 dist <= self.cfg.max_goal_dist_from_box
             )
-
+            # write proposal to target_xy only where valid and not already set by a previous proposal
             write_mask = (~valid) & new_valid
             target_xy[write_mask] = proposal[write_mask]
             valid |= new_valid
@@ -173,7 +182,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         self.target_pos[env_ids, 2] = env_origins[:, 2] + self.cfg.box_center_z
 
     # --------------------------------------------------------------------- #
-    # action processing
+    # action processing, actions:(nums_envs,7)
     # --------------------------------------------------------------------- #
     def _pre_physics_step(self, actions: torch.Tensor):
         if actions.dim() == 1:
@@ -183,14 +192,14 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         self._actions = actions
 
         # current joint state
-        current_q = self.robot.data.joint_pos.clone()
-        target_q = current_q.clone()
+        current_q = self.robot.data.joint_pos.clone() # current joint positions, shape (num_envs, 8)
+        target_q = current_q.clone() # target joint positions are initialized to the same as current
 
         # -------------------------------------------------
         # arm: delta joint position control
         # -------------------------------------------------
         arm_q = current_q[:, self._arm_joint_ids]
-        arm_delta = self.cfg.arm_action_scale * actions[:, :6]
+        arm_delta = self.cfg.arm_action_scale * actions[:, :6] # action are deltas for the arm joints
         arm_target = arm_q + arm_delta
         arm_target = torch.clamp(arm_target, self._arm_lower_limits, self._arm_upper_limits)
 
@@ -201,7 +210,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         # > 0 => open
         # <= 0 => close
         # -------------------------------------------------
-        grip_open_cmd = actions[:, 6] > 0.0
+        grip_open_cmd = actions[:, 6] > 0.0 # if action > 0, we want to open the gripper; if action <= 0, we want to close the gripper
         grip_val = torch.where(
             grip_open_cmd,
             torch.full((self.num_envs,), self.cfg.gripper_open, device=self.device),
@@ -232,7 +241,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         link7_q = joint_pos[:, self._link7_joint_id]
         link8_q = joint_pos[:, self._link8_joint_id]
         grip_opening = 0.5 * (link7_q - link8_q)
-        grip_opening = grip_opening.unsqueeze(-1)
+        grip_opening = grip_opening.unsqueeze(-1) # shape (num_envs, 1)
 
         joint_state_abstract = torch.cat([arm_q, grip_opening], dim=-1)
 
@@ -250,7 +259,8 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         gripper_pose = torch.cat([gripper_pos, gripper_rpy], dim=-1)
         '''
         gripper_base_quat = self.robot.data.body_quat_w[:, self._gripper_base_body_idx, :].clone()
-        flip = gripper_base_quat[:, 0] < 0
+        # shape (num_envs,4), (w,x,y,z) format
+        flip = gripper_base_quat[:, 0] < 0 # if w component is negative, flip the sign of the entire quaternion to ensure w is non-negative. 
         gripper_base_quat[flip] = -gripper_base_quat[flip]
 
         gripper_pose = torch.cat([gripper_pos, gripper_base_quat], dim=-1)
@@ -298,21 +308,21 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         # timeout
         time_out = self.episode_length_buf >= self._max_steps - 1
 
-        terminated = success | box_fell
-        truncated = time_out
+        terminated = success | box_fell # (num_envs,) bool tensor indicating which envs are done due to success or failure
+        truncated = time_out # (num_envs,) bool tensor indicating which envs are done due to timeout
 
         return terminated, truncated
 
     def _get_rewards(self) -> torch.Tensor:
         joint_pos = self.robot.data.joint_pos
-
+        # position of gripper
         jaw_l_pos = self.robot.data.body_pos_w[:, self._jaw_l_body_idx, :]
         jaw_r_pos = self.robot.data.body_pos_w[:, self._jaw_r_body_idx, :]
         gripper_pos = 0.5 * (jaw_l_pos + jaw_r_pos)
 
         box_pos = self.box.data.root_pos_w
         target_pos = self.target_pos
-
+        # degree gripper opening
         joint7_q = joint_pos[:, self._link7_joint_id]
         joint8_q = joint_pos[:, self._link8_joint_id]
         grip_opening = 0.5 * (joint7_q - joint8_q)
@@ -320,6 +330,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
 
         # -------------------------------------------------
         # Incentivize gripper reaching the box
+        # Reaching rewards
         # -------------------------------------------------
         grip_to_box_dist = torch.linalg.norm(box_pos - gripper_pos, dim=-1)
         box_to_target_dist = torch.linalg.norm(box_pos - target_pos, dim=-1)
@@ -333,7 +344,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         # -------------------------------------------------
         # Incentivize gripper top-down orientation; encourage grasping from top
         # -------------------------------------------------
-        gripper_base_pos = self.robot.data.body_pos_w[:, self._gripper_base_body_idx, :]
+        gripper_base_pos = self.robot.data.body_pos_w[:, self._gripper_base_body_idx, :] # (x,y,z) position of the gripper base
 
         base_to_center = gripper_base_pos - gripper_pos
 
@@ -365,14 +376,16 @@ class PiperPickNPlaceEnv(DirectRLEnv):
 
         v_l_norm = torch.nn.functional.normalize(v_l, dim=-1, eps=1e-6)
         v_r_norm = torch.nn.functional.normalize(v_r, dim=-1, eps=1e-6)
-
+        # cosine of angle between vectors from box to each jaw; 
+        # if jaws are on opposite sides of the box, this will be close to -1; if jaws are on same side, this will be close to +1
         cos_lr = torch.sum(v_l_norm * v_r_norm, dim=-1)
         r_between = 0.5 * (1.0 - cos_lr)
 
         # r_open = 0.5 * (1.0 + torch.tanh(20.0 * (gripper_open_dist - 0.05)))
+        # incentive gripper to be open when not between the box
         grip_open_norm = torch.clamp(grip_opening / self.cfg.gripper_open, 0.0, 1.0)
         r_open = grip_open_norm ** 2
-        
+        # when gripper is between the box, incentivize closing the gripper to grasp the box
         opening_err = torch.abs(grip_opening - self.cfg.desired_grasp_opening)
         r_close = 1.0 - torch.tanh(80.0 * opening_err)
         
@@ -390,7 +403,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
 
         r_lift = torch.clamp(lift_amount / self.cfg.desired_lift_height, max=1.0)
 
-
+        # punish contact with table; encourage lifting the box off the table
 
         jaw_l_z = jaw_l_pos[:, 2]
         jaw_r_z = jaw_r_pos[:, 2]
@@ -412,7 +425,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         
 
         # -------------------------------------------------
-        # Incentivize placing after reaching desired height
+        # Incentivize placing after reaching desired height, encourage placing the box at the target after lifting
         # -------------------------------------------------
         lifted = lift_amount > self.cfg.lift_threshold
 
@@ -425,7 +438,7 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         r_success = success.float()
 
         # -------------------------------------------------
-        # Small penalty for actions
+        # Small penalty for actions, penalize large actions
         # -------------------------------------------------
         r_action_penalty = torch.sum(self._actions[:, :6] ** 2, dim=-1)
 
@@ -438,10 +451,10 @@ class PiperPickNPlaceEnv(DirectRLEnv):
         upper = self._arm_upper_limits.unsqueeze(0)
 
         q_norm = (arm_q - lower) / (upper - lower)
-        dist_to_limit = torch.minimum(q_norm, 1.0 - q_norm)
+        dist_to_limit = torch.minimum(q_norm, 1.0 - q_norm) # distance to nearest limit, normalized to [0,0.5]
 
         margin = self.cfg.joint_limit_margin
-        joint_limit_violation = torch.clamp(margin - dist_to_limit, min=0.0) / margin
+        joint_limit_violation = torch.clamp(margin - dist_to_limit, min=0.0) / margin # normalized violation amount, 0 if within limits, up to 1 if at or beyond margin from limit
 
         r_joint_limit_penalty = joint_limit_violation.sum(dim=-1)
 

@@ -29,6 +29,7 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": "project_831.tasks.piper_env_cfg:PiperPickNPlaceEnvCfg",
-        "rl_games_cfg_entry_point": "project_831.tasks.agents:rl_games_ppo_cfg.yaml",
+        # if use PPO in rl_games
+        #"rl_games_cfg_entry_point": "project_831.tasks.agents:rl_games_ppo_cfg.yaml",
     },
 )

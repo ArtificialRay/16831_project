@@ -19,3 +19,5 @@ python -m pip install -e ./source/project_831
 ```bash
 python scripts/random_agent.py --task PiperPickNPlace
 ```
+
+There is one hard-code path at ./source/project_831/project_831/tasks/piper_env_cfg.py, change to your-project-path/assets/robots/

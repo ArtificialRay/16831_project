@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import isaaclab.sim as sim_utils
 from isaaclab.utils import configclass
 from isaaclab.envs import DirectRLEnvCfg
@@ -6,6 +8,10 @@ from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.sim.spawners.from_files import UsdFileCfg
+
+# Get project root directory (5 levels up from this file)
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+ROBOT_USD_PATH = str(PROJECT_ROOT / "assets/robots/piper_description/piper_description.usd")
 
 
 @configclass
@@ -63,7 +69,7 @@ class PiperSceneCfg(InteractiveSceneCfg):
     robot = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Robot",
         spawn=UsdFileCfg(
-            usd_path="/home/droplab/16831/project/project_831/assets/robots/piper_description/piper_description.usd",
+            usd_path=ROBOT_USD_PATH,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 0.0),
