@@ -30,6 +30,10 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": "project_831.tasks.piper_env_cfg:PiperPickNPlaceEnvCfg",
         # if use PPO in rl_games
-        #"rl_games_cfg_entry_point": "project_831.tasks.agents:rl_games_ppo_cfg.yaml",
+        "rl_games_cfg_entry_point": "project_831.tasks.agents:rl_games_ppo_cfg.yaml",
+        # if use DQN in rl_games
+        "dqn_cfg_entry_point": "project_831.tasks.agents:dqn_cfg.yaml",
+        # if use SAC
+        "sac_cfg_entry_point": "project_831.tasks.agents:sac_cfg.yaml",
     },
 )

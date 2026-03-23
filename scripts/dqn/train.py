@@ -23,12 +23,15 @@ parser.add_argument("--video_length", type=int, default=200, help="Length of the
 parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default="PiperPickNPlace", help="Name of the task.")
+parser.add_argument(
+    "--agent", type=str, default="dqn_cfg_entry_point", help="Name of the RL agent configuration entry point."
+)
 parser.add_argument("--seed", type=int, default=42, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=10000, help="Maximum training iterations.")
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
 parser.add_argument("--log_dir", type=str, default="logs/dqn", help="Directory for logging.")
 parser.add_argument("--save_interval", type=int, default=500, help="Checkpoint save interval.")
-parser.add_argument("--eval_interval", type=int, default=100, help="Evaluation interval.")
+parser.add_argument("--eval_interval", type=int, default=200, help="Evaluation interval.")
 parser.add_argument("--wandb-project-name", type=str, default=None, help="Weights & Biases project name")
 parser.add_argument("--wandb-entity", type=str, default=None, help="Weights & Biases entity (team)")
 parser.add_argument("--wandb-name", type=str, default=None, help="Weights & Biases run name")
@@ -43,11 +46,15 @@ parser.add_argument(
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
-args_cli = parser.parse_args()
+# parse the arguments
+args_cli, hydra_args = parser.parse_known_args()
 
 # always enable cameras to record video
 if args_cli.video:
     args_cli.enable_cameras = True
+
+# clear out sys.argv for Hydra
+sys.argv = [sys.argv[0]] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -59,7 +66,7 @@ import logging
 
 # Add parent directory to path to import dqn_agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from dqn_agent import DQN
+from scripts.dqn.dqn_agent import DQN
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.hydra import hydra_task_config
 import project_831.tasks  # noqa: F401
@@ -74,10 +81,11 @@ from isaaclab.utils.dict import print_dict
 # import logger
 logger = logging.getLogger(__name__)
 
-@hydra_task_config(args_cli.task)
-def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg):
+@hydra_task_config(args_cli.task,args_cli.agent)
+def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg,agent_cfg:dict):
     """Train DQN agent."""
-    
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
+    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
     # Set seeds for reproducibility
     torch.manual_seed(args_cli.seed)
     random.seed(args_cli.seed)
@@ -147,7 +155,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg):
         print(f"[INFO] Tracking with W&B: {project_name}/{run_name}")
     
     # Create DQN agent
-    policy = DQN(args_cli, env)
+    agent_cfg["params"]["eval_interval"] = args_cli.eval_interval
+    agent_cfg["params"]["sim_device"] = env_cfg.sim.device
+    policy = DQN(agent_cfg, env)
     
     # Load checkpoint if specified
     if args_cli.checkpoint is not None:
@@ -187,12 +197,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg):
                 wandb.log({
                     "global_step": step + 1,
                     "Reward":policy.score,
-                    "TD Loss":loss,
                     "Epsilon":epsilon,
                     "time_elapsed": elapsed_time,
                     "steps_per_second": steps_per_sec,
                     "buffer_size": policy.replay.size(),
                 }, step=step + 1)
+                if loss is not None:
+                    wandb.log({"TD Loss": loss}, step=step + 1)
             policy.score = 0 # clear previous score
         
         # Save checkpoint

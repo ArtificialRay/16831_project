@@ -1,0 +1,5 @@
+params:
+  discount: 0.99
+  mini_batch_size: 128
+  lr: 0.0003
+  tau: 0.995

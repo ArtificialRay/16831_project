@@ -35,7 +35,7 @@ def soft_update(net, net_target, tau):
 
 class DQN:
     def __init__(self, args, env):
-        self.args = args
+        #self.args = args
 
         # initialise parameters
         self.env = env 
@@ -43,19 +43,20 @@ class DQN:
         self.replay = ReplayBuffer(num_envs=self.num_envs)
         self.obs_space = env.observation_space.shape[0]
         self.act_space = env.action_space.shape[0]
-        self.discount = 0.99
-        self.mini_batch_size = 128
+        self.discount = args["params"]["discount"]
+        self.mini_batch_size = args["params"]["mini_batch_size"]
         self.batch_size = self.num_envs * self.mini_batch_size
-        self.tau = 0.995
-        self.num_eval_freq = args.eval_interval
-        self.lr = 3e-4
+        self.tau = args["params"]["tau"]
+        self.num_eval_freq = args["params"]["eval_interval"]
+        self.lr = args["params"]["lr"]
+        self.device = args["params"]["sim_device"]
 
         self.run_step = 1
         self.score = 0
 
         # define Q-network
-        self.q        = Net(num_obs=self.obs_space, num_act=self.act_space).to(self.args.sim_device)
-        self.q_target = Net(num_obs=self.obs_space, num_act=self.act_space).to(self.args.sim_device)
+        self.q        = Net(num_obs=self.obs_space, num_act=self.act_space).to(self.device)
+        self.q_target = Net(num_obs=self.obs_space, num_act=self.act_space).to(self.device)
         soft_update(self.q, self.q_target, tau=0.0)
         self.q_target.eval()
         self.optimizer = torch.optim.Adam(self.q.parameters(), lr=self.lr)
@@ -90,9 +91,9 @@ class DQN:
 
     def act(self, obs, epsilon=0.0):
         # epsilon greedy: step grows larger, less likely to explore
-        coin = torch.rand(self.num_envs, device=self.args.sim_device) < epsilon
+        coin = torch.rand(self.num_envs, device=self.device) < epsilon
 
-        rand_act = torch.rand(self.num_envs, device=self.args.sim_device)
+        rand_act = torch.rand(self.num_envs, device=self.device)
         with torch.no_grad():
             q_table = self.q(obs)
             true_act = torch.cat([(q_table[b] == q_table[b].max()).nonzero(as_tuple=False)[0] # get index of the first largest q in q table
@@ -109,12 +110,14 @@ class DQN:
         if not hasattr(self, 'obs'):
             # First time: initialize environment
             self.obs, _ = self.env.reset()
-        
-        obs = self.obs
+            obs = self.obs["policy"]
+        else:
+            obs = self.obs
         action = self.act(obs, epsilon)
         
         # Execute action and get transition tuple
         next_obs, reward, terminated, truncated, info = self.env.step(action)
+        next_obs = next_obs["policy"]
         done = terminated | truncated
         
         # Store transition in replay buffer
